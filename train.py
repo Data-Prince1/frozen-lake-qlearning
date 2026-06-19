@@ -1,21 +1,5 @@
-"""
-train.py
-========
-Training loop for the Q-Learning agent on the custom Frozen Lake environment.
-
-Running this module trains an agent, records training statistics
-(episode rewards, success rate, number of successful episodes, epsilon over
-time), saves the learned Q-table and statistics to ``results/`` and produces
-training-performance graphs (Bonus B).
-
-Usage
------
-    python train.py
-    python train.py --episodes 20000 --alpha 0.1 --gamma 0.99 --slippery
-
-Author : Prince Obeng Nkoah (ID: 22424742)
-Course : DSCD 614 - Reinforcement Learning
-"""
+# Training the Q-learning agent on Frozen Lake
+# Prince Obeng Nkoah - 22424742
 
 import argparse
 import json
@@ -29,15 +13,12 @@ from agent import QLearningAgent
 RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 
 
+# run the training loop and return the statistics we collected
 def train(env, agent, episodes=15000, log_every=1000, verbose=True):
-    """Train ``agent`` on ``env`` for ``episodes`` episodes.
-
-    Returns a dictionary of recorded statistics.
-    """
-    episode_rewards = []      # total reward collected per episode
-    episode_successes = []    # 1 if the goal was reached, else 0
-    epsilon_history = []      # epsilon value at the start of each episode
-    episode_steps = []        # steps taken per episode
+    episode_rewards = []
+    episode_successes = []
+    epsilon_history = []
+    episode_steps = []
 
     for ep in range(episodes):
         epsilon_history.append(agent.epsilon)
@@ -52,7 +33,7 @@ def train(env, agent, episodes=15000, log_every=1000, verbose=True):
             state = next_state
             total_reward += reward
 
-        # An episode is a "success" if it ended on the goal (reward == 1).
+        # reward > 0 means we reached the goal
         success = 1 if total_reward > 0 else 0
         episode_rewards.append(total_reward)
         episode_successes.append(success)
@@ -62,9 +43,8 @@ def train(env, agent, episodes=15000, log_every=1000, verbose=True):
         if verbose and (ep + 1) % log_every == 0:
             window = episode_successes[-log_every:]
             rate = 100.0 * sum(window) / len(window)
-            print(f"Episode {ep + 1:>6}/{episodes} | "
-                  f"epsilon={agent.epsilon:.3f} | "
-                  f"success rate (last {log_every}) = {rate:5.1f}%")
+            print(f"Episode {ep + 1}/{episodes} | epsilon={agent.epsilon:.3f} | "
+                  f"success rate (last {log_every}) = {rate:.1f}%")
 
     stats = {
         "episode_rewards": episode_rewards,
@@ -78,13 +58,12 @@ def train(env, agent, episodes=15000, log_every=1000, verbose=True):
     return stats
 
 
+# save the q-table and the stats so we can use them later
 def save_results(agent, stats, hyperparams, tag="main"):
-    """Persist the Q-table, statistics and hyper-parameters to ``results/``."""
     os.makedirs(RESULTS_DIR, exist_ok=True)
     agent.save(os.path.join(RESULTS_DIR, f"q_table_{tag}.npy"))
 
-    # JSON-serialisable copy of the stats (lists of plain numbers).
-    serialisable = {
+    data = {
         "hyperparameters": hyperparams,
         "n_episodes": stats["n_episodes"],
         "n_successful_episodes": stats["n_successful_episodes"],
@@ -95,22 +74,22 @@ def save_results(agent, stats, hyperparams, tag="main"):
         "episode_steps": [int(x) for x in stats["episode_steps"]],
     }
     with open(os.path.join(RESULTS_DIR, f"training_stats_{tag}.json"), "w") as f:
-        json.dump(serialisable, f)
-    print(f"Saved Q-table and stats to {RESULTS_DIR} (tag='{tag}').")
+        json.dump(data, f)
+    print("Saved q-table and stats to", RESULTS_DIR)
 
 
+# simple moving average for smoother graphs
 def moving_average(values, window=100):
-    """Return the simple moving average of ``values`` over ``window``."""
     if len(values) < window:
         window = max(1, len(values))
     cumsum = np.cumsum(np.insert(np.asarray(values, dtype=float), 0, 0.0))
     return (cumsum[window:] - cumsum[:-window]) / window
 
 
+# make the training graphs (bonus B)
 def plot_training(stats, tag="main"):
-    """Produce and save training-performance graphs (Bonus B)."""
     import matplotlib
-    matplotlib.use("Agg")  # headless backend; no display required
+    matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     os.makedirs(RESULTS_DIR, exist_ok=True)
@@ -122,43 +101,40 @@ def plot_training(stats, tag="main"):
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
 
     axes[0].plot(moving_average(rewards, window), color="tab:blue")
-    axes[0].set_title(f"Episode Reward (moving avg, window={window})")
+    axes[0].set_title("Average reward")
     axes[0].set_xlabel("Episode")
     axes[0].set_ylabel("Average reward")
-    axes[0].grid(True, alpha=0.3)
 
     axes[1].plot(100.0 * moving_average(successes, window), color="tab:green")
-    axes[1].set_title(f"Success Rate (moving avg, window={window})")
+    axes[1].set_title("Success rate")
     axes[1].set_xlabel("Episode")
     axes[1].set_ylabel("Success rate (%)")
-    axes[1].grid(True, alpha=0.3)
 
     axes[2].plot(epsilons, color="tab:red")
-    axes[2].set_title("Epsilon over Time")
+    axes[2].set_title("Epsilon over time")
     axes[2].set_xlabel("Episode")
     axes[2].set_ylabel("Epsilon")
-    axes[2].grid(True, alpha=0.3)
 
     fig.tight_layout()
     out_path = os.path.join(RESULTS_DIR, f"training_performance_{tag}.png")
     fig.savefig(out_path, dpi=120)
     plt.close(fig)
-    print(f"Saved training graphs to {out_path}")
+    print("Saved graphs to", out_path)
 
 
 def build_argparser():
-    p = argparse.ArgumentParser(description="Train a Q-Learning agent on Frozen Lake.")
+    p = argparse.ArgumentParser()
     p.add_argument("--episodes", type=int, default=15000)
-    p.add_argument("--alpha", type=float, default=0.1, help="learning rate")
-    p.add_argument("--gamma", type=float, default=0.99, help="discount factor")
-    p.add_argument("--epsilon", type=float, default=1.0, help="initial epsilon")
+    p.add_argument("--alpha", type=float, default=0.1)
+    p.add_argument("--gamma", type=float, default=0.99)
+    p.add_argument("--epsilon", type=float, default=1.0)
     p.add_argument("--epsilon-min", type=float, default=0.01)
     p.add_argument("--epsilon-decay", type=float, default=0.9995)
-    p.add_argument("--slippery", action="store_true", help="enable stochastic transitions (Bonus A)")
+    p.add_argument("--slippery", action="store_true")
     p.add_argument("--max-steps", type=int, default=200)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--tag", type=str, default="main")
-    p.add_argument("--no-plot", action="store_true", help="skip generating graphs")
+    p.add_argument("--no-plot", action="store_true")
     return p
 
 
@@ -190,18 +166,13 @@ def main():
         "seed": args.seed,
     }
 
-    print("=" * 60)
-    print("Training Q-Learning agent on Frozen Lake (8x8)")
-    print("=" * 60)
-    for k, v in hyperparams.items():
-        print(f"  {k:>15} : {v}")
-    print("-" * 60)
+    print("Training on Frozen Lake (8x8)")
+    print("Hyperparameters:", hyperparams)
 
     stats = train(env, agent, episodes=args.episodes)
 
-    print("-" * 60)
-    print(f"Successful training episodes : {stats['n_successful_episodes']} / {args.episodes}")
-    print(f"Overall training success rate: {stats['overall_success_rate']:.2f}%")
+    print("Successful episodes:", stats["n_successful_episodes"], "/", args.episodes)
+    print("Overall training success rate: %.2f%%" % stats["overall_success_rate"])
 
     save_results(agent, stats, hyperparams, tag=args.tag)
     if not args.no_plot:
