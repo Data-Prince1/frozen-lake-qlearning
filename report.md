@@ -6,52 +6,57 @@
 ---
 
 ## 1. Introduction
-This report describes a complete Reinforcement Learning (RL) solution to the 8×8
-Frozen Lake problem, built entirely from first principles in Python. No RL
-framework (Gymnasium, OpenAI Gym, Stable Baselines, RLlib, etc.) is used; only
-NumPy and Matplotlib support the maths and plotting. In RL an *agent* learns by
-interacting with an *environment*: it observes a state, takes an action, and
-receives a reward and the next state, aiming to learn a *policy* that maximises
-cumulative reward. Frozen Lake casts this as crossing a frozen lake from a Start
-cell (S) to a Goal cell (G) while avoiding Holes (H) and walking on Frozen
-cells (F).
+This report explains my solution to the 8×8 Frozen Lake problem using
+Q-Learning. I built everything from scratch in Python and did not use any
+Reinforcement Learning library (no Gymnasium, OpenAI Gym, Stable Baselines or
+RLlib). I only used NumPy for the arrays and Matplotlib for the graphs.
+
+In Reinforcement Learning an agent learns by trying actions in an environment.
+At each step it sees a state, picks an action, and gets a reward and the next
+state. The goal is to learn a policy (which action to take in each state) that
+collects the most reward. In Frozen Lake the agent has to move from the Start
+cell (S) to the Goal cell (G) without falling into a Hole (H). The other cells
+are Frozen (F) and safe to step on.
 
 ## 2. Environment Design
-The environment is implemented as the `FrozenLakeEnv` class with the required API
-`reset()`, `step(action)`, `render()`, `get_state()` and `is_terminal()`.
+I wrote the environment as a class called `FrozenLakeEnv` with the methods the
+assignment asked for: `reset()`, `step(action)`, `render()`, `get_state()` and
+`is_terminal()`.
 
-* **State representation:** single integer indices `0…63`, where `row = s // 8`
-  and `col = s % 8`. Start = 0, Goal = 63.
-* **Actions:** `0 = Left`, `1 = Down`, `2 = Right`, `3 = Up`. Movement is clipped
-  at boundaries, so walking into a wall leaves the agent in place.
-* **Reward structure:** `+1` for reaching the Goal, `0` otherwise (including
-  holes). Holes and the Goal are terminal; a 200-step budget guarantees
-  termination.
+* **States:** I used single numbers from 0 to 63. To get the grid position I do
+  `row = s // 8` and `col = s % 8`. The start is state 0 and the goal is state 63.
+* **Actions:** `0 = Left`, `1 = Down`, `2 = Right`, `3 = Up`. If the agent tries
+  to move off the grid it just stays where it is.
+* **Rewards:** the agent gets `+1` only when it reaches the goal, and `0` for
+  every other move (including falling in a hole). Holes and the goal end the
+  episode, and there is also a 200-step limit so an episode always ends.
 
-The class maintains the current state, enforces boundaries, detects holes and
-goal, returns rewards and signals termination. It also supports an optional
-`is_slippery` mode for the bonus stochastic experiment.
+The class keeps track of the current state, checks the boundaries, finds holes
+and the goal, gives the reward and says when the episode is over. It also has an
+optional `is_slippery` mode that I used for the bonus.
 
 ## 3. Q-Learning Algorithm
-Q-Learning is a model-free, off-policy, value-based method. It maintains a
-Q-table `Q(s,a)`, initialised to zeros, estimating the expected return of taking
-action `a` in state `s`. After each transition the table is updated by the
-required rule:
+Q-Learning keeps a table `Q(s,a)` that estimates how good it is to take action
+`a` in state `s`. I start the table at all zeros and update it as the agent
+learns. The update rule I used is exactly the one from the assignment:
 
 > Q(s,a) ← Q(s,a) + α [ r + γ · maxₐ' Q(s',a') − Q(s,a) ]
 
-Here `α` is the learning rate, `γ` the discount factor, and
-`r + γ · maxₐ' Q(s',a')` the temporal-difference (TD) target; the bracketed term
-is the TD error. The bootstrap term is dropped when the next state is terminal.
-**Exploration** uses an ε-greedy policy: a random action with probability `ε`,
-otherwise the greedy action `argmaxₐ Q(s,a)` (ties broken randomly). `ε` starts
-at 1.0 and decays multiplicatively toward 0.01, shifting the agent from
-exploration to exploitation as learning progresses.
+Here `α` is the learning rate (how fast it learns), `γ` is the discount factor
+(how much it cares about future rewards), and `r + γ · maxₐ' Q(s',a')` is the
+target value. When the next state is terminal there is no future value, so that
+part becomes 0.
+
+For choosing actions I used **ε-greedy**: with probability `ε` the agent picks a
+random action (explore), otherwise it picks the action with the highest Q-value
+(exploit). I break ties randomly so it does not always pick action 0. `ε` starts
+at 1.0 and slowly goes down to 0.01, so the agent explores a lot at first and
+then exploits what it learned.
 
 ## 4. Training Methodology
-The agent (`QLearningAgent`) is trained by `train.py`, which runs episodes,
-applies the update rule on every transition, decays ε per episode, and records
-episode rewards, success flags and ε over time. Main run hyperparameters:
+The training loop is in `train.py`. It plays many episodes, updates the Q-table
+after every step, lowers `ε` after each episode, and saves the episode rewards,
+successes and `ε` values. The settings I used for the main run were:
 
 | Parameter | Value | | Parameter | Value |
 |---|---|---|---|---|
@@ -60,29 +65,30 @@ episode rewards, success flags and ε over time. Main run hyperparameters:
 | Discount factor γ | 0.99 | | ε decay | 0.9995 |
 | Max steps/episode | 200 | | Seed | 42 |
 
-Hyperparameters were explored via command-line flags; α = 0.1 with γ = 0.99 and a
-slow ε decay gave reliable convergence. Statistics are saved to `results/` as
-JSON, and the learned Q-table as `.npy`.
+I tried a few different values for the learning rate, discount and exploration.
+`α = 0.1` with `γ = 0.99` and a slow `ε` decay worked well and learned a good
+policy. The Q-table and the stats are saved in the `results/` folder.
 
 ## 5. Experimental Results
-Greedy evaluation over 100 episodes on the deterministic environment achieved
-**100% success, average reward 1.0000, 0 failures, 100 successful runs**. The
-training success rate over the final 1,000 episodes reached ≈ 99.6%. The
-moving-average reward and success-rate curves rise steadily while ε decays
-(`results/training_performance_main.png`).
+When I tested the trained agent greedily for 100 episodes on the normal
+(non-slippery) map it got **100% success, an average reward of 1.0, 0 failures
+and 100 successful runs**. The success rate over the last 1,000 training
+episodes was about 99.6%. The reward and success-rate graphs go up as `ε` goes
+down (`results/training_performance_main.png`).
 
-**Bonus B (graphs):** reward, success-rate and ε curves are generated
-automatically. **Bonus C (strategy comparison):** pure ε-greedy (ε = 0.1) and
-decaying ε-greedy both reached 100% greedy evaluation; pure ε-greedy showed a
-slightly higher *training* success rate (≈ 92% vs ≈ 87%) because it explores less
-late in training, while decaying ε explores more early
-(`results/strategy_comparison.png`). **Bonus A (stochastic):** with slippery
-transitions (slip probability 2/3 total) trained for 30,000 episodes, greedy
-evaluation reached **88% success** — strong given the noise.
+**Bonus B (graphs):** the reward, success-rate and epsilon graphs are made
+automatically during training. **Bonus C (strategies):** I compared a pure
+ε-greedy (ε = 0.1) with a decaying ε-greedy. Both reached 100% on the greedy
+test. The pure one had a slightly higher *training* success rate (about 92% vs
+87%) because it explores less near the end, while the decaying one explores more
+at the start (`results/strategy_comparison.png`). **Bonus A (slippery):** with
+the slippery version (the action slips 2/3 of the time) trained for 30,000
+episodes, the agent reached **88% success**, which is good for a random
+environment.
 
 ## 6. Learned Policy
-The greedy policy extracted from the Q-table (Part D) avoids the central hole
-column and steers the agent down the safe right-hand corridor to the goal:
+The policy I got from the Q-table (Part D) avoids the holes in the middle and
+goes down the safe right side to reach the goal:
 
 ```
 ↓  ↓  ↓  ↓  ↓  ↓  ↓  ↓
@@ -94,26 +100,26 @@ column and steers the agent down the safe right-hand corridor to the goal:
 ←  H  ←  ←  H  ↑  H  ↓
 ←  ←  ←  H  ←  ←  ←  G
 ```
-Legend: ← Left, ↓ Down, → Right, ↑ Up, H Hole, G Goal. States that are off the
-optimal path may show arbitrary arrows since they are never visited under the
-greedy policy from the start.
+Legend: ← Left, ↓ Down, → Right, ↑ Up, H Hole, G Goal. Some cells that are not on
+the best path show random arrows because the agent never visits them when it
+plays greedily from the start.
 
 ## 7. Challenges Encountered
-* **Reward sparsity:** with reward only at the goal, early episodes rarely
-  succeed; a slow ε decay and enough episodes were needed for the signal to
-  propagate back through the Q-table.
-* **Greedy tie-breaking:** an all-zeros initial Q-table makes every action a tie;
-  breaking ties randomly (rather than always picking action 0) prevented a
-  systematic bias and improved exploration.
-* **Stochastic mode:** slippery transitions greatly increased variance and
-  required ~2× the episodes to learn a robust policy.
-* **Console encoding:** the arrow symbols required forcing UTF-8 output on
-  Windows consoles.
+* **Reward only at the goal:** because the reward only comes at the end, the
+  agent fails a lot early on. I needed enough episodes and a slow `ε` decay for
+  the values to spread back through the table.
+* **Ties in the Q-table:** at the start all the values are 0, so every action is
+  a tie. Picking randomly between tied actions (instead of always action 0)
+  helped the agent explore better.
+* **Slippery mode:** the random slipping made learning much harder and needed
+  about twice as many episodes.
+* **Printing arrows:** I had to set the output to UTF-8 so the arrows showed up
+  correctly on Windows.
 
 ## 8. Conclusion
-A from-scratch tabular Q-Learning agent solves the deterministic 8×8 Frozen Lake
-optimally (100% success) and handles the stochastic variant robustly (88%). The
-implementation cleanly separates environment, agent, training and evaluation, and
-includes all three bonus tasks. The results confirm the core RL principles:
-value bootstrapping via the TD update and an ε-greedy schedule that transitions
-from exploration to exploitation produce an optimal, hole-avoiding policy.
+My from-scratch Q-Learning agent solves the normal 8×8 Frozen Lake perfectly
+(100% success) and still does well on the slippery version (88%). I split the
+code into the environment, the agent, training and evaluation, and I did all
+three bonus tasks. The results show the main ideas of Q-Learning: updating the
+Q-table with the TD rule and lowering `ε` over time lets the agent go from
+exploring to exploiting and find a good, hole-avoiding policy.
